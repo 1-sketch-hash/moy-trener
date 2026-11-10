@@ -128,8 +128,8 @@ details.hist summary::-webkit-details-marker{display:none}
 details.hist summary b{font:400 20px var(--display);text-transform:uppercase;letter-spacing:.02em}
 details.hist summary span{color:var(--muted);font:500 12px var(--mono);white-space:nowrap}
 .hbody{padding:0 0 12px;display:flex;flex-direction:column;gap:6px;font-size:15px}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#0d0d0d;display:grid;grid-template-columns:repeat(4,1fr);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
-.tabs button{background:none;border:0;padding:12px 4px;font:400 16px var(--display);letter-spacing:.06em;text-transform:uppercase;color:#8d8a83;cursor:pointer}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#0d0d0d;display:grid;grid-template-columns:repeat(5,1fr);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
+.tabs button{background:none;border:0;padding:12px 2px;font:400 13.5px var(--display);letter-spacing:.04em;text-transform:uppercase;color:#8d8a83;cursor:pointer}
 .tabs button[aria-current="page"]{color:#0d0d0d;background:var(--accent)}
 .timer{position:fixed;left:12px;right:12px;bottom:calc(68px + env(safe-area-inset-bottom));z-index:7;max-width:536px;margin:0 auto;background:var(--accent);color:#0d0d0d;border:2px solid #0d0d0d;padding:10px 14px;display:flex;align-items:center;gap:12px;box-shadow:5px 5px 0 #0d0d0d}
 .timer[hidden]{display:none}
@@ -175,6 +175,18 @@ td.wk{font:400 18px var(--display);text-transform:uppercase;width:44px}
 .focusbar span.main{background:var(--accent);color:var(--on-accent)}
 .method-list{display:flex;flex-direction:column;gap:10px}
 .method-list b{font:400 17px var(--display);letter-spacing:.04em;text-transform:uppercase;display:block}
+.chart .cbar{fill:var(--soft)}
+.chart .cbar.cur{fill:var(--accent);stroke:var(--ink);stroke-width:1.5}
+.chart .goal{stroke:var(--tag);stroke-width:1.5;stroke-dasharray:5 4}
+.chart text.bv{fill:var(--ink);font-weight:700}
+.chart text.goallbl{fill:var(--tag);font-weight:700}
+.mrow{display:grid;grid-template-columns:118px 1fr 52px;gap:8px;align-items:center;font-size:14px}
+.mtrack{height:14px;border:2px solid var(--edge);background:var(--bg);position:relative}
+.mtrack i{display:block;height:100%;background:var(--accent)}
+.mtrack i.full{background:var(--good)}
+.mval{font:500 13px var(--mono);text-align:right}
+.delta{font:700 12px var(--mono)}
+.delta.up{color:var(--good)} .delta.down{color:var(--tag)}
 ul.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 .empty{color:var(--muted);font-size:15px;margin:0}
 .sec-title{font:400 20px var(--display);letter-spacing:.05em;text-transform:uppercase;margin:8px 0 -4px;display:flex;align-items:center;gap:8px}
@@ -197,7 +209,8 @@ ul.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 </div>
 <nav class="tabs" aria-label="Разделы">
   <button type="button" data-act="nav" data-v="today">Тренировка</button>
-  <button type="button" data-act="nav" data-v="history">Прогресс</button>
+  <button type="button" data-act="nav" data-v="stats">Статистика</button>
+  <button type="button" data-act="nav" data-v="history">Журнал</button>
   <button type="button" data-act="nav" data-v="body">Тело</button>
   <button type="button" data-act="nav" data-v="program">План</button>
 </nav>
@@ -298,7 +311,7 @@ function render(){
   let h="";
   if(S.toast)h+='<div class="toast '+(S.toast.k==="err"?"err":"")+'" role="status">'+esc(S.toast.t)+'</div>';
   if(!store.cloud&&S.conn==="ok")h+='<p class="banner">Открой приложение через бота в Telegram — тогда записи будут в облаке и не потеряются.</p>';
-  h+=({today:vToday,history:vHistory,body:vBody,program:vProgram}[S.view])();
+  h+=({today:vToday,stats:vStats,history:vHistory,body:vBody,program:vProgram}[S.view])();
   $("#view").innerHTML=h;
 }
 function waiting(what){
@@ -418,29 +431,84 @@ function chart(pts,unit){
     '<text x="'+pl+'" y="'+(H-6)+'">'+f(fd)+'</text><text x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+f(ld)+'</text></svg>';
 }
 
-function vHistory(){
-  if(!S.got.workouts)return waiting("тренировки");
-  const now=Date.now(),W=S.workouts;
-  const n28=W.filter(w=>now-w.ts<28*D).length;
-  const v7=W.filter(w=>now-w.ts<7*D).reduce((a,w)=>a+(num(w.volume)),0);
-  let h='<h2>Прогресс</h2><div class="tiles">'+
-    '<div class="tile"><b>'+n28+'</b><span>тренировок за 4 недели (цель 16)</span></div>'+
-    '<div class="tile"><b>'+kg(v7/1000)+'</b><span>тонн поднято за 7 дней</span></div>'+
-    '<div class="tile"><b>'+(W[0]?esc(ago(W[0].date)):"—")+'</b><span>последняя тренировка</span></div></div>';
-  // lift progress
+const MUS={bench:"Грудь",incline_db:"Грудь",db_bench:"Грудь",dips:"Грудь",pulldown:"Спина",row:"Спина",cable_row:"Спина",db_row:"Спина",pullup:"Спина",lateral:"Плечи",ohp:"Плечи",ohp_db:"Плечи",facepull:"Плечи",shrug_bb:"Трапеции",shrug_db:"Трапеции",curl_bb:"Бицепс",incline_curl:"Бицепс",hammer:"Бицепс",oh_tri:"Трицепс",skull:"Трицепс",pushdown:"Трицепс",legpress:"Квадрицепс",hack:"Квадрицепс",bss:"Квадрицепс",legext:"Квадрицепс",rdl_db:"Бицепс бедра",seated_curl:"Бицепс бедра",legcurl:"Бицепс бедра",hyperext:"Бицепс бедра",calf:"Икры",pallof:"Пресс",hlr:"Пресс"};
+const MORDER=["Грудь","Спина","Плечи","Трапеции","Бицепс","Трицепс","Квадрицепс","Бицепс бедра","Икры","Пресс"];
+function mondayOf(iso){const d=dt(iso);d.setDate(d.getDate()-(d.getDay()+6)%7);return iso_(d)}
+function iso_(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function e1rm(sets){let b=0;for(const s of sets||[]){const w=num(s.w),r=Math.min(num(s.r),15);if(w>0&&r>0)b=Math.max(b,w*(1+r/30))}return r1(b)}
+function bars(items,opt){
+  opt=opt||{};const W=340,H=150,pl=6,pr=6,pt=20,pb=22;const mx=Math.max(opt.goal||0,...items.map(i=>i.v),1);
+  const bw=(W-pl-pr)/items.length,Y=v=>pt+(1-v/mx)*(H-pt-pb);let s="";
+  items.forEach((it,i)=>{const x=pl+i*bw+bw*.18,w=bw*.64,y=Y(it.v);
+    s+='<rect class="cbar'+(i===items.length-1?' cur':'')+'" x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(0,H-pb-y).toFixed(1)+'"/>';
+    if(it.v)s+='<text class="bv" x="'+(x+w/2).toFixed(1)+'" y="'+(y-5).toFixed(1)+'" text-anchor="middle">'+(opt.fmt?opt.fmt(it.v):it.v)+'</text>';
+    s+='<text x="'+(x+w/2).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle">'+esc(it.l)+'</text>'});
+  if(opt.goal){const y=Y(opt.goal);s+='<line class="goal" x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'"/><text class="goallbl" x="'+pl+'" y="'+(y-5).toFixed(1)+'">план '+opt.goal+'</text>'}
+  return'<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(opt.label||"")+'">'+s+'</svg>'}
+function deltaTxt(a,b,unit,lowerBetter){if(a==null||b==null||a===b)return"";const d=r1(b-a),good=lowerBetter?d<0:d>0;return' <span class="delta '+(good?"up":"down")+'">'+(d>0?"+":"")+kg(d)+" "+unit+'</span>'}
+function vStats(){
+  if(!S.got.workouts)return waiting("статистику");
+  const W=S.workouts,td=today(),now=Date.now();
+  const st=(S.program&&S.program.start)||td;
+  // planned workouts in last 28 days (from program start)
+  let planned=0;for(let i=0;i<28;i++){const d=dt(td);d.setDate(d.getDate()-i);const s=iso_(d);if(s>=st&&s<=td&&planFor(s))planned++}
+  const done28=W.filter(w=>w.date>iso_(new Date(dt(td).getTime()-28*D))).length;
+  const pct=planned?Math.min(100,Math.round(done28/planned*100)):0;
+  const thisMon=mondayOf(td),weekVol=W.filter(w=>w.date>=thisMon).reduce((a,w)=>a+num(w.volume),0);
+  let h='<h2>Статистика</h2><div class="tiles">'+
+    '<div class="tile"><b>'+W.length+'</b><span>тренировок всего</span></div>'+
+    '<div class="tile"><b>'+(planned?pct+'%':'—')+'</b><span>плана выполнено за 4 недели ('+done28+' из '+planned+')</span></div>'+
+    '<div class="tile"><b>'+kg(weekVol/1000)+'</b><span>тонн за эту неделю</span></div></div>';
+  // weekly bars (last 8 weeks)
+  const stMon=mondayOf(st);const weeks=[];for(let i=7;i>=0;i--){const d=dt(thisMon);d.setDate(d.getDate()-7*i);const m=iso_(d);if(m>=stMon||W.some(w=>mondayOf(w.date)===m))weeks.push(m)}if(!weeks.length)weeks.push(thisMon);
+  const byW={};for(const w of W){const m=mondayOf(w.date);(byW[m]=byW[m]||[]).push(w)}
+  const lab=m=>{const d=dt(m);return d.getDate()+"."+String(d.getMonth()+1).padStart(2,"0")};
+  const goalPerWeek=S.program&&S.program.week?Object.keys(S.program.week).length:0;
+  h+='<p class="sec-title">Тренировки по неделям</p><div class="card">'+bars(weeks.map(m=>({l:lab(m),v:(byW[m]||[]).length})),{goal:goalPerWeek,label:"Тренировок по неделям"})+'</div>';
+  h+='<p class="sec-title">Тоннаж по неделям, т</p><div class="card">'+bars(weeks.map(m=>({l:lab(m),v:r1((byW[m]||[]).reduce((a,w)=>a+num(w.volume),0)/1000)})),{fmt:v=>kg(v),label:"Тоннаж по неделям"})+'<p class="note">Сумма вес × повторы. Растёт — значит нагрузка прогрессирует.</p></div>';
+  // muscle sets this week vs plan
+  const plan={},doneM={};
+  for(const d of days())for(const e of d.exercises){const m=MUS[e.id];if(m)plan[m]=(plan[m]||0)+setsFor(e)}
+  for(const w of W.filter(w=>w.date>=thisMon))for(const e of w.exercises||[]){const m=MUS[e.id];if(m)doneM[m]=(doneM[m]||0)+(e.sets||[]).length}
+  h+='<p class="sec-title">Подходы по мышцам · неделя</p><div class="card">';
+  for(const m of MORDER){if(!plan[m]&&!doneM[m])continue;const p=plan[m]||0,d=doneM[m]||0,w=p?Math.min(100,Math.round(d/p*100)):100;
+    h+='<div class="mrow"><span>'+m+'</span><span class="mtrack"><i class="'+(d>=p&&p?"full":"")+'" style="width:'+w+'%"></i></span><span class="mval">'+d+'/'+p+'</span></div>'}
+  h+='<p class="note">Сделано подходов с понедельника из запланированных на эту неделю.</p></div>';
+  // strength chart
   const ids=[];const seen={};
   for(const d of days())for(const e of d.exercises)if(!seen[e.id]){seen[e.id]=1;if(W.some(w=>(w.exercises||[]).some(x=>x.id===e.id&&x.sets.some(s=>num(s.w)>0))))ids.push(e.id)}
   h+='<p class="sec-title">Сила по упражнениям</p><div class="card">';
   if(!ids.length)h+='<p class="empty">Сохрани первую тренировку, и здесь появится расчётный максимум на один повтор по каждому упражнению.</p>';
   else{
-    const keyOrder=["bench","squat","deadlift","ohp","row","incline_db"];
+    const keyOrder=["bench","hack","ohp","pullup","incline_db","row"];
     if(!S.lift||!ids.includes(S.lift))S.lift=keyOrder.find(k=>ids.includes(k))||ids[0];
     h+='<div class="chips">'+ids.map(id=>{const e=exById(id);return'<button type="button" class="chip" data-act="lift" data-id="'+id+'" aria-pressed="'+(id===S.lift)+'">'+esc(e.short||e.name)+'</button>'}).join("")+'</div>';
     const pts=[];
-    for(const w of W.slice().reverse()){const e=(w.exercises||[]).find(x=>x.id===S.lift);if(!e)continue;let b=0;for(const s of e.sets){const ww=num(s.w),rr=Math.min(num(s.r),15);if(ww>0&&rr>0)b=Math.max(b,ww*(1+rr/30))}if(b)pts.push({t:dt(w.date).getTime()+(w.ts%D)/1000,v:r1(b)})}
-    h+='<p class="note">Расчётный максимум (кг на 1 повтор) по лучшему подходу. Растёт, значит прогрессируешь.</p>'+chart(pts,"кг");
+    const WA=W.slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:num(a.ts)-num(b.ts));
+    for(const w of WA){const e=(w.exercises||[]).find(x=>x.id===S.lift);if(!e)continue;const b=e1rm(e.sets);if(b)pts.push({t:dt(w.date).getTime()+(num(w.ts)%D)/1000,v:b})}
+    h+='<p class="note">Расчётный максимум на 1 повтор по лучшему подходу. Растёт — значит ты сильнее.</p>'+chart(pts,"кг");
+    // records table
+    h+='<table style="margin-top:8px">';
+    for(const id of ids){const e=exById(id);const ser=WA.map(w=>{const x=(w.exercises||[]).find(y=>y.id===id);return x?e1rm(x.sets):0}).filter(v=>v>0);if(!ser.length)continue;
+      h+='<tr><td>'+esc(e.short||e.name)+'</td><td class="r">'+kg(Math.max(...ser))+' кг'+deltaTxt(ser[0],ser[ser.length-1],"кг")+'</td></tr>'}
+    h+='</table><p class="note">Лучший результат и изменение от первой тренировки до последней.</p>';
   }
-  h+='</div><p class="sec-title">Журнал</p>';
+  h+='</div>';
+  // body
+  const B=S.body.slice().reverse(),bw=B.filter(b=>num(b.weight)>0),bt=B.filter(b=>num(b.waist)>0);
+  h+='<p class="sec-title">Тело</p><div class="card">';
+  if(!bw.length&&!bt.length)h+='<p class="empty">Добавь вес и талию во вкладке «Тело», и здесь появится их динамика.</p>';
+  else{
+    if(bw.length)h+='<p class="note"><b>Вес:</b> '+kg(num(bw[bw.length-1].weight))+' кг'+deltaTxt(num(bw[0].weight),num(bw[bw.length-1].weight),"кг",true)+'</p>'+chart(bw.map(b=>({t:dt(b.date).getTime(),v:num(b.weight)})),"кг");
+    if(bt.length)h+='<p class="note"><b>Талия:</b> '+kg(num(bt[bt.length-1].waist))+' см'+deltaTxt(num(bt[0].waist),num(bt[bt.length-1].waist),"см",true)+'</p>'+chart(bt.map(b=>({t:dt(b.date).getTime(),v:num(b.waist)})),"см");
+  }
+  h+='</div>';
+  return h;
+}
+function vHistory(){
+  if(!S.got.workouts)return waiting("тренировки");
+  const W=S.workouts;
+  let h='<h2>Журнал</h2><p class="sub">Все сохранённые тренировки. Нажми, чтобы раскрыть.</p>';
   if(!W.length)h+='<p class="empty">Тренировок пока нет. Начни во вкладке «Тренировка».</p>';
   for(const w of W){
     h+='<details class="hist" data-id="'+esc(w.id)+'"'+(S.open[w.id]?" open":"")+'><summary><b>'+esc(w.dayName||"Тренировка")+'</b><span>'+esc(fmtDate(w.date))+' · '+kg(num(w.volume)/1000)+' т'+(w.durationMin?" · "+num(w.durationMin)+" мин":"")+'</span></summary><div class="hbody">';
@@ -591,12 +659,12 @@ async function finish(){
     await store.set("w_"+id,str);
     S.workouts.unshift(Object.assign({id},doc));S.workouts.sort((x,y)=>y.ts-x.ts);
     delete S.drafts[day.id];persist();S.dayId=null;S.override=null;S.sel=null;stopTimer();setToast("Тренировка сохранена. Отличная работа","ok");
-    S.saving=false;location.hash="history";render();window.scrollTo(0,0);
+    S.saving=false;location.hash="stats";render();window.scrollTo(0,0);
   }catch(err){
     S.saving=false;setToast("Не удалось сохранить: проверь интернет и попробуй ещё раз","err");render();
   }
 }
-function route(){const h=location.hash.slice(1);S.view=["today","history","body","program"].includes(h)?h:"today";S.confirm=null;render()}
+function route(){const h=location.hash.slice(1);S.view=["today","stats","history","body","program"].includes(h)?h:"today";S.confirm=null;render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- data ---------- */
