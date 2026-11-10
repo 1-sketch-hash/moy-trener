@@ -210,6 +210,10 @@ ul.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 .sec-title::before{content:"";width:14px;height:14px;background:var(--accent);border:2px solid var(--edge)}
 @media (max-width:380px){.wd-t{font-size:8.5px}.wd-d{font-size:21px}h2{font-size:38px}}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+/* Telegram fullscreen: keep content clear of Telegram's own top buttons and the phone's notch */
+.top{padding-top:calc(10px + var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px))}
+.tabs{padding-bottom:calc(4px + max(env(safe-area-inset-bottom),var(--tg-safe-area-inset-bottom,0px)))}
+.timer{bottom:calc(66px + max(env(safe-area-inset-bottom),var(--tg-safe-area-inset-bottom,0px)))}
 </style>
 </head>
 <body>
@@ -753,7 +757,7 @@ window.addEventListener("hashchange",route);
 
 /* ---------- data ---------- */
 async function init(){
-  if(TG){try{TG.ready();TG.expand();if(TG.disableVerticalSwipes)TG.disableVerticalSwipes();if(TG.setHeaderColor)TG.setHeaderColor("#0d0d0d");if(TG.setBackgroundColor)TG.setBackgroundColor(TG.colorScheme==="dark"?"#121212":"#e3e1dc");document.documentElement.dataset.theme=TG.colorScheme==="dark"?"dark":"light"}catch(e){}}
+  if(TG){try{TG.ready();TG.expand();try{if(TG.requestFullscreen&&TG.isVersionAtLeast&&TG.isVersionAtLeast("8.0")&&/^(ios|android)/.test(TG.platform||"")&&!TG.isFullscreen)TG.requestFullscreen()}catch(e){}if(TG.disableVerticalSwipes)TG.disableVerticalSwipes();if(TG.setHeaderColor)TG.setHeaderColor("#0d0d0d");if(TG.setBackgroundColor)TG.setBackgroundColor(TG.colorScheme==="dark"?"#121212":"#e3e1dc");document.documentElement.dataset.theme=TG.colorScheme==="dark"?"dark":"light"}catch(e){}}
   S.program=window.PROGRAM||null;S.got.program=true;
   route();
   const keys=await store.keys();
