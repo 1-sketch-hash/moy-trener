@@ -187,6 +187,23 @@ td.wk{font:400 18px var(--display);text-transform:uppercase;width:44px}
 .mval{font:500 13px var(--mono);text-align:right}
 .delta{font:700 12px var(--mono)}
 .delta.up{color:var(--good)} .delta.down{color:var(--tag)}
+.chat{display:flex;flex-direction:column;gap:8px}
+.msg{max-width:90%;padding:9px 12px;border:2px solid var(--edge);font-size:15px;white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:var(--accent);color:var(--on-accent)}
+.msg.ai{align-self:flex-start;background:var(--surface)}
+.msg.err{border-color:var(--tag);color:var(--tag)}
+.msg img{max-width:180px;max-height:180px;display:block;margin-bottom:6px;border:2px solid var(--edge)}
+.msg table{font-size:13px;margin-top:8px;white-space:normal}
+.msg .primary{font-size:16px;padding:9px 12px;box-shadow:3px 3px 0 #0d0d0d;margin-top:8px;width:100%}
+.composer{display:grid;grid-template-columns:46px 1fr 46px;gap:6px;align-items:end}
+.composer textarea{min-height:46px;height:46px;resize:none}
+.iconbtn{height:46px;border:2px solid var(--edge);background:var(--surface);color:var(--ink);cursor:pointer;display:grid;place-items:center;padding:0}
+.iconbtn svg{width:22px;height:22px;fill:currentColor}
+.iconbtn.send{background:var(--ink);color:var(--accent)}
+.iconbtn:disabled{opacity:.5}
+.preview{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.preview img{width:56px;height:56px;object-fit:cover;border:2px solid var(--edge)}
+.typing{font:500 13px var(--mono);color:var(--muted)}
 ul.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 .empty{color:var(--muted);font-size:15px;margin:0}
 .sec-title{font:400 20px var(--display);letter-spacing:.05em;text-transform:uppercase;margin:8px 0 -4px;display:flex;align-items:center;gap:8px}
@@ -209,8 +226,8 @@ ul.rules{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
 </div>
 <nav class="tabs" aria-label="Разделы">
   <button type="button" data-act="nav" data-v="today">Тренировка</button>
+  <button type="button" data-act="nav" data-v="food">Питание</button>
   <button type="button" data-act="nav" data-v="stats">Статистика</button>
-  <button type="button" data-act="nav" data-v="history">Журнал</button>
   <button type="button" data-act="nav" data-v="body">Тело</button>
   <button type="button" data-act="nav" data-v="program">План</button>
 </nav>
@@ -311,7 +328,7 @@ function render(){
   let h="";
   if(S.toast)h+='<div class="toast '+(S.toast.k==="err"?"err":"")+'" role="status">'+esc(S.toast.t)+'</div>';
   if(!store.cloud&&S.conn==="ok")h+='<p class="banner">Открой приложение через бота в Telegram — тогда записи будут в облаке и не потеряются.</p>';
-  h+=({today:vToday,stats:vStats,history:vHistory,body:vBody,program:vProgram}[S.view])();
+  h+=({today:vToday,food:vFood,stats:vStats,history:vHistory,body:vBody,program:vProgram}[S.view])();
   $("#view").innerHTML=h;
 }
 function waiting(what){
@@ -431,6 +448,63 @@ function chart(pts,unit){
     '<text x="'+pl+'" y="'+(H-6)+'">'+f(fd)+'</text><text x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+f(ld)+'</text></svg>';
 }
 
+/* ---------- nutrition ---------- */
+const TGT={kcal:2300,p:140,f:65,c:275};
+S.food={};S.chat=[];S.aiBusy=false;S.pendingImg=null;S.aiDraft="";
+try{S.chat=JSON.parse(localStorage.getItem("trainer-chat-v1")||"[]")||[]}catch(e){S.chat=[]}
+function saveChat(){try{localStorage.setItem("trainer-chat-v1",JSON.stringify(S.chat.slice(-30).map(m=>Object.assign({},m,{img:undefined}))))}catch(e){}}
+function dayFood(iso){const w=S.food[mondayOf(iso)]||{};return w[iso]||[]}
+function dayTotals(iso){return dayFood(iso).reduce((a,e)=>({k:a.k+num(e[1]),p:a.p+num(e[2]),f:a.f+num(e[3]),c:a.c+num(e[4])}),{k:0,p:0,f:0,c:0})}
+async function foodSave(m){await store.set("f_"+m,JSON.stringify(S.food[m]||{}))}
+async function foodLoad(){}
+async function foodAdd(items){const td=today(),m=mondayOf(td);const wk=S.food[m]||(S.food[m]={});const arr=wk[td]||(wk[td]=[]);
+  for(const it of items)arr.push([String(it.name||"").slice(0,40),Math.round(num(it.kcal)),r1(num(it.protein)),r1(num(it.fat)),r1(num(it.carbs))]);
+  await foodSave(m)}
+async function foodDel(i){const td=today(),m=mondayOf(td);const arr=(S.food[m]||{})[td];if(!arr)return;arr.splice(i,1);await foodSave(m)}
+function aiEnabled(){return !!window.AI_URL}
+async function aiAsk(text,img){
+  const td=today(),t=dayTotals(td),p=planFor(td);
+  const ctx="Сегодня "+td+". Уже съедено: "+t.k+" ккал, белок "+r1(t.p)+" г, жиры "+r1(t.f)+" г, углеводы "+r1(t.c)+" г. Цель: "+TGT.kcal+" ккал, белок "+TGT.p+" г, жиры "+TGT.f+" г, углеводы "+TGT.c+" г. Тренировка сегодня: "+(p?getDay(p).name:"нет, день отдыха")+".";
+  const hist=S.chat.filter(m=>!m.err).slice(-8).map(m=>({role:m.me?"user":"model",text:m.text||""}));
+  const r=await fetch(window.AI_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({initData:(window.Telegram&&Telegram.WebApp&&Telegram.WebApp.initData)||"",context:ctx,history:hist,text,image:img?{data:img.data,mime:img.mime}:null})});
+  let j={};try{j=await r.json()}catch(e){}
+  if(!r.ok)throw new Error(j.error||("http_"+r.status));return j}
+function aiErrText(e){const c=String(e&&e.message||e);return c==="rate_limit"?"Лимит бесплатных запросов на сейчас исчерпан. Попробуй через минуту.":c==="unauthorized"||c==="forbidden"?"ИИ отвечает только внутри Telegram-бота. Открой приложение через бота.":c==="no_key"?"На сервере не задан ключ Gemini.":"ИИ сейчас не ответил ("+c+"). Проверь интернет и попробуй ещё раз."}
+async function aiSend(q){
+  const text=(q!=null?q:S.aiDraft).trim(),img=S.pendingImg;
+  if(!text&&!img||S.aiBusy)return;
+  S.chat.push({me:true,text:text||"Фото еды",img:img?img.preview:null});S.aiDraft="";S.pendingImg=null;S.aiBusy=true;render();scrollChat();
+  try{const j=await aiAsk(text,img);S.chat.push({me:false,text:j.reply||"",items:Array.isArray(j.items)?j.items:[]})}
+  catch(e){S.chat.push({me:false,err:true,text:aiErrText(e)})}
+  S.aiBusy=false;saveChat();render();scrollChat()}
+function scrollChat(){setTimeout(()=>{const el=document.getElementById("chat-end");if(el)el.scrollIntoView({block:"end",behavior:"smooth"})},50)}
+function loadImage(file){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,1024/Math.max(im.width,im.height));const c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext("2d").drawImage(im,0,0,c.width,c.height);const url=c.toDataURL("image/jpeg",.82);res({preview:url,data:url.split(",")[1],mime:"image/jpeg"})};im.onerror=rej;im.src=fr.result};fr.onerror=rej;fr.readAsDataURL(file)})}
+const IC_CAM='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1.5 2H20a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3.5L9 4zm3 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6z"/></svg>',IC_SEND='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5l2.6 7.1L14 12l-8.4 1.4z"/></svg>';
+function macroRows(t){return[["Калории",t.k,TGT.kcal,"ккал"],["Белок",r1(t.p),TGT.p,"г"],["Жиры",r1(t.f),TGT.f,"г"],["Углеводы",r1(t.c),TGT.c,"г"]].map(([n,v,g,u])=>{const w=Math.min(100,Math.round(v/g*100));return'<div class="mrow"><span>'+n+'</span><span class="mtrack"><i class="'+(v>g*1.05&&n==="Калории"?"":v>=g*.95?"full":"")+'" style="width:'+w+'%;'+(v>g*1.05&&n==="Калории"?"background:var(--tag)":"")+'"></i></span><span class="mval">'+kg(v)+'/'+g+'</span></div>'}).join("")}
+function vFood(){
+  const td=today(),t=dayTotals(td),list=dayFood(td);
+  const left=Math.max(0,TGT.kcal-t.k),leftP=Math.max(0,r1(TGT.p-t.p));
+  let h='<div><h2>Питание</h2><p class="sub">Осталось на сегодня: '+left+' ккал и '+kg(leftP)+' г белка</p></div>';
+  h+='<div class="card">'+macroRows(t)+'</div>';
+  h+='<p class="sec-title">Съедено сегодня</p><div class="card">';
+  if(!list.length)h+='<p class="empty">Пока пусто. Опиши еду ИИ или сфотографируй тарелку — он посчитает и добавит сюда.</p>';
+  list.forEach((e,i)=>{h+='<div class="li"><span>'+esc(e[0])+'</span><span class="last">'+e[1]+' ккал · Б '+kg(e[2])+'</span>'+(S.confirm==="f:"+i?'<span><button type="button" class="small-btn danger" data-act="food-del-yes" data-i="'+i+'">Удалить</button><button type="button" class="small-btn" data-act="cancel">Нет</button></span>':'<button type="button" class="small-btn" data-act="food-del" data-i="'+i+'" aria-label="Удалить">✕</button>')+'</div>'});
+  h+='</div><p class="sec-title">ИИ-нутрициолог</p>';
+  if(!aiEnabled()){h+='<div class="card"><p class="empty">ИИ работает в Telegram-версии приложения. Здесь можно смотреть дневник питания.</p></div>';return h}
+  h+='<div class="card chat">';
+  if(!S.chat.length)h+='<div class="msg ai">Напиши, что съел — например «2 яйца, тост с маслом и капучино», или пришли фото тарелки. Ещё могу подсказать, что съесть, чтобы добрать белок.</div>';
+  S.chat.forEach((m,i)=>{
+    h+='<div class="msg '+(m.me?"me":"ai")+(m.err?" err":"")+'">'+(m.img?'<img src="'+esc(m.img)+'" alt="Фото еды">':"")+esc(m.text||"");
+    if(!m.me&&m.items&&m.items.length){const tot=m.items.reduce((a,x)=>({k:a.k+num(x.kcal),p:a.p+num(x.protein)}),{k:0,p:0});
+      h+='<table>'+m.items.map(x=>'<tr><td>'+esc(x.name)+(x.grams?' <small>'+kg(num(x.grams))+' г</small>':"")+'</td><td class="r">'+Math.round(num(x.kcal))+' ккал<br>Б '+kg(num(x.protein))+' · Ж '+kg(num(x.fat))+' · У '+kg(num(x.carbs))+'</td></tr>').join("")+'<tr><td><b>Итого</b></td><td class="r"><b>'+Math.round(tot.k)+' ккал · Б '+kg(r1(tot.p))+'</b></td></tr></table>';
+      h+=m.added?'<p class="note" style="margin-top:6px">Добавлено в дневник</p>':'<button type="button" class="primary" data-act="food-add" data-i="'+i+'">Добавить в дневник</button>'}
+    h+='</div>'});
+  if(S.aiBusy)h+='<div class="typing">ИИ думает…</div>';
+  h+='<span id="chat-end"></span></div>';
+  h+='<div class="chips" style="flex-wrap:nowrap">'+["Что съесть на ужин?","Перекус на 30 г белка","Как добрать белок сегодня?"].map(q=>'<button type="button" class="chip" data-act="ai-chip" data-q="'+esc(q)+'">'+esc(q)+'</button>').join("")+'</div>';
+  if(S.pendingImg)h+='<div class="preview"><img src="'+esc(S.pendingImg.preview)+'" alt="Выбранное фото"><span>Фото прикреплено</span><button type="button" class="small-btn" data-act="ai-img-clear">Убрать</button></div>';
+  h+='<div class="composer"><label class="iconbtn" for="aiimg" aria-label="Сфотографировать еду">'+IC_CAM+'</label><input id="aiimg" type="file" accept="image/*" hidden><textarea id="aitext" placeholder="Что ты съел или о чём спросить?">'+esc(S.aiDraft)+'</textarea><button type="button" class="iconbtn send" data-act="ai-send" aria-label="Отправить"'+(S.aiBusy?" disabled":"")+'>'+IC_SEND+'</button></div>';
+  return h}
 const MUS={bench:"Грудь",incline_db:"Грудь",db_bench:"Грудь",dips:"Грудь",pulldown:"Спина",row:"Спина",cable_row:"Спина",db_row:"Спина",pullup:"Спина",lateral:"Плечи",ohp:"Плечи",ohp_db:"Плечи",facepull:"Плечи",shrug_bb:"Трапеции",shrug_db:"Трапеции",curl_bb:"Бицепс",incline_curl:"Бицепс",hammer:"Бицепс",oh_tri:"Трицепс",skull:"Трицепс",pushdown:"Трицепс",legpress:"Квадрицепс",hack:"Квадрицепс",bss:"Квадрицепс",legext:"Квадрицепс",rdl_db:"Бицепс бедра",seated_curl:"Бицепс бедра",legcurl:"Бицепс бедра",hyperext:"Бицепс бедра",calf:"Икры",pallof:"Пресс",hlr:"Пресс"};
 const MORDER=["Грудь","Спина","Плечи","Трапеции","Бицепс","Трицепс","Квадрицепс","Бицепс бедра","Икры","Пресс"];
 function mondayOf(iso){const d=dt(iso);d.setDate(d.getDate()-(d.getDay()+6)%7);return iso_(d)}
@@ -503,6 +577,7 @@ function vStats(){
     if(bt.length)h+='<p class="note"><b>Талия:</b> '+kg(num(bt[bt.length-1].waist))+' см'+deltaTxt(num(bt[0].waist),num(bt[bt.length-1].waist),"см",true)+'</p>'+chart(bt.map(b=>({t:dt(b.date).getTime(),v:num(b.waist)})),"см");
   }
   h+='</div>';
+  h+=vHistory().replace('<h2>Журнал</h2>','<p class="sec-title">Журнал</p>');
   return h;
 }
 function vHistory(){
@@ -584,10 +659,13 @@ document.addEventListener("input",e=>{
     const day=getDay(S.dayId);if(!day)return;const d=draftFor(day);const s=d.sets[t.dataset.ex][+t.dataset.i];
     s[t.dataset.f]=t.value.replace(",",".").trim();if(!d.startedAt)d.startedAt=Date.now();persist();
   }else if(t.id==="wnote"){const day=getDay(S.dayId);if(!day)return;draftFor(day).note=t.value;persist()}
+  else if(t.id==="aitext")S.aiDraft=t.value;
   else if(t.id==="bdate")S.bodyForm.date=t.value;
   else if(t.id==="bw")S.bodyForm.weight=t.value;
   else if(t.id==="bwaist")S.bodyForm.waist=t.value;
 });
+document.addEventListener("change",async e=>{if(e.target.id!=="aiimg"||!e.target.files||!e.target.files[0])return;try{S.pendingImg=await loadImage(e.target.files[0])}catch(err){setToast("Не удалось открыть фото","err")}render()});
+document.addEventListener("keydown",e=>{if(e.target.id==="aitext"&&e.key==="Enter"&&!e.shiftKey){e.preventDefault();aiSend()}});
 document.addEventListener("toggle",e=>{const t=e.target;if(t.matches&&t.matches("details.hist"))S.open[t.dataset.id]=t.open},true);
 document.addEventListener("submit",async e=>{
   if(e.target.id!=="bform")return;e.preventDefault();if(!S.db)return;
@@ -610,6 +688,12 @@ document.addEventListener("click",async e=>{
   if(a==="day"){S.override=b.dataset.id;S.confirm=null;render();window.scrollTo(0,0);return}
   if(a==="sel"){S.sel=b.dataset.d;S.override=null;S.confirm=null;render();return}
   if(a==="unoverride"){S.override=null;render();return}
+  if(a==="ai-send"){aiSend();return}
+  if(a==="ai-chip"){aiSend(b.dataset.q);return}
+  if(a==="ai-img-clear"){S.pendingImg=null;render();return}
+  if(a==="food-add"){const m=S.chat[+b.dataset.i];if(!m||m.added)return;try{await foodAdd(m.items);m.added=true;saveChat();setToast("Добавлено в дневник","ok")}catch(e){setToast("Не удалось сохранить","err")}render();return}
+  if(a==="food-del"){S.confirm="f:"+b.dataset.i;render();return}
+  if(a==="food-del-yes"){S.confirm=null;try{await foodDel(+b.dataset.i)}catch(e){setToast("Не удалось удалить","err")}render();return}
   if(a==="tech"){const k=b.dataset.k;S.tech[k]=!S.tech[k];render();return}
   if(a==="lift"){S.lift=b.dataset.id;render();return}
   if(a==="delset"){const day=getDay(S.dayId);if(!day)return;const arr=draftFor(day).sets[b.dataset.ex];if(arr.length>1){arr.splice(+b.dataset.i,1);persist();render()}return}
@@ -664,7 +748,7 @@ async function finish(){
     S.saving=false;setToast("Не удалось сохранить: проверь интернет и попробуй ещё раз","err");render();
   }
 }
-function route(){const h=location.hash.slice(1);S.view=["today","stats","history","body","program"].includes(h)?h:"today";S.confirm=null;render()}
+function route(){const h=location.hash.slice(1);S.view=["today","food","stats","history","body","program"].includes(h)?h:"today";S.confirm=null;render()}
 window.addEventListener("hashchange",route);
 
 /* ---------- data ---------- */
@@ -678,7 +762,8 @@ async function init(){
   for(const k of keys){const raw=vals[k];if(!raw)continue;let v;try{v=JSON.parse(raw)}catch(e){continue}
     if(k.startsWith("w_")){v.exercises=(v.exercises||[]).map(e=>({id:e.id,name:e.name||((exById(e.id)||{}).name)||e.id,sets:(e.sets||[]).map(s=>Array.isArray(s)?{w:s[0],r:s[1]}:s)}));W.push(Object.assign({id:k.slice(2)},v))}
     else if(k.startsWith("b_"))B.push(Object.assign({id:k.slice(2)},v));
-    else if(k.startsWith("d_")){S.drafts[k.slice(2)]=v;pushed[k.slice(2)]=raw}}
+    else if(k.startsWith("d_")){S.drafts[k.slice(2)]=v;pushed[k.slice(2)]=raw}
+    else if(k.startsWith("f_")){const m=k.slice(2);if((dt(today())-dt(m))/D>7*12){store.del(k).catch(()=>{})}else S.food[m]=v}}
   W.sort((x,y)=>y.ts-x.ts);B.sort((x,y)=>x.date<y.date?1:-1);
   S.workouts=W;S.body=B;
   for(const k of Object.keys(S.drafts))if(pristine(S.drafts[k])){delete S.drafts[k]}
